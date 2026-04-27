@@ -1,0 +1,87 @@
+:root {
+  --green-darkest: #0d2818;
+  --green-dark: #1a4a2e;
+  --green: #2a6b44;
+  --green-light: rgba(42, 107, 68, 0.2);
+
+  --gold: #c9a227;
+  --gold-light: #e6c45a;
+
+  --crimson: #8b1a1a;
+  --crimson-light: rgba(139, 26, 26, 0.15);
+
+  --white: #ffffff;
+  --text-light: rgba(255, 255, 255, 0.92);
+  --text-muted: rgba(255, 255, 255, 0.65);
+  --text-faint: rgba(255, 255, 255, 0.4);
+
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'DM Sans', -apple-system, 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text-light);
+  background: var(--green-darkest);
+  background: radial-gradient(ellipse at top, var(--green-dark) 0%, var(--green-darkest) 70%);
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+  line-height: 1.5;
+  touch-action: manipulation;
+}
+
+button {
+  font-family: var(--font-body);
+}
+
+img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 162, 39, 0.4); }
+  50% { box-shadow: 0 0 0 24px rgba(201, 162, 39, 0); }
+}
+
+@keyframes pulseRing {
+  0% { transform: scale(0.95); opacity: 0.7; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.slide-up {
+  animation: slideUp 0.5s ease-out;
+}

@@ -1,0 +1,24 @@
+{
+  "name": "RKA Attendance Kiosk",
+  "short_name": "RKA Kiosk",
+  "description": "Radhakrishna Academy attendance kiosk",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#1a4a2e",
+  "theme_color": "#1a4a2e",
+  "icons": [
+    {
+      "src": "/crest.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

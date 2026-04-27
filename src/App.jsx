@@ -3,25 +3,22 @@ import IdleScreen from './pages/IdleScreen'
 import CameraScreen from './pages/CameraScreen'
 import { supabase } from './lib/supabase'
 
-// Kiosk states
 const STATES = {
-  IDLE: 'idle',          // Waiting for someone to tap
-  CAPTURING: 'capturing',// Camera open, capturing face
-  RESULT: 'result',      // Showing welcome / error
+  IDLE: 'idle',
+  CAPTURING: 'capturing',
 }
 
 export default function App() {
   const [state, setState] = useState(STATES.IDLE)
   const [supabaseReady, setSupabaseReady] = useState(null)
   const [now, setNow] = useState(new Date())
+  const [lastCapture, setLastCapture] = useState(null)
 
-  // Live clock
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
 
-  // Check Supabase connectivity on startup
   useEffect(() => {
     (async () => {
       try {
@@ -45,6 +42,17 @@ export default function App() {
     setState(STATES.IDLE)
   }
 
+  function handleCaptured(captureData) {
+    // Phase 2: just log it. Phase 4 will use this to do recognition + record.
+    console.log('Face captured:', {
+      descriptorLength: captureData.descriptor.length,
+      detectionScore: captureData.detectionScore,
+      hasSnapshot: !!captureData.videoSnapshot,
+    })
+    setLastCapture(captureData)
+    // CameraScreen handles its own success UI; user clicks "Done" to return
+  }
+
   return (
     <div style={{
       width: '100vw',
@@ -64,6 +72,7 @@ export default function App() {
       {state === STATES.CAPTURING && (
         <CameraScreen
           onCancel={handleCancelCapture}
+          onCaptured={handleCaptured}
         />
       )}
     </div>

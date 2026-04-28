@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { loadFaceModels, detectFaceInVideo, evaluateFaceQuality } from '../lib/faceDetection'
+import { loadFaceModels, detectFaceFast, detectFaceFull, evaluateFaceQuality } from '../lib/faceDetection'
 
-// Tuned for Tab A7 — slower devices need more time between detections
-const STABLE_LOCK_MS = 1000     // was 600 — needs more measurements at slower detection rate
-const DETECT_INTERVAL_MS = 500  // was 200 — 2 detections per second instead of 5
+// AGGRESSIVE settings for slow hardware (Tab A7)
+const STABLE_LOCK_MS = 2000     // 2 seconds — needs more time at 1 detection/sec
+const DETECT_INTERVAL_MS = 1000 // 1 detection per second
 
 const QUALITY_MESSAGES = {
   no_face: 'Step into frame',
@@ -18,12 +18,12 @@ export default function CameraScreen({ onCancel, onCaptured }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const stableSinceRef = useRef(null)
-  const lastDetectionRef = useRef(null)
 
   const [permissionState, setPermissionState] = useState('requesting')
   const [error, setError] = useState('')
   const [countdown, setCountdown] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
+  const [perfInfo, setPerfInfo] = useState('')
 
   const [modelStatus, setModelStatus] = useState('not_loaded')
   const [modelMessage, setModelMessage] = useState('')
@@ -31,6 +31,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
   const [qualityState, setQualityState] = useState({ ok: false, reason: 'no_face' })
   const [stableProgress, setStableProgress] = useState(0)
   const [captured, setCaptured] = useState(false)
+  const [capturing, setCapturing] = useState(false)
 
   // Load face-api.js models on mount
   useEffect(() => {
@@ -120,9 +121,9 @@ export default function CameraScreen({ onCancel, onCaptured }) {
     }
   }, [])
 
-  // Run face detection loop once camera + models are both ready
+  // Detection loop — uses FAST path (no landmarks, no embedding)
   useEffect(() => {
-    if (permissionState !== 'granted' || modelStatus !== 'ready' || captured) return
+    if (permissionState !== 'granted' || modelStatus !== 'ready' || captured || capturing) return
 
     let active = true
 
@@ -136,10 +137,13 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         }
 
         try {
-          const detection = await detectFaceInVideo(video)
+          const detection = await detectFaceFast(video)
           if (!active) break
 
-          lastDetectionRef.current = detection
+          // Show how long the fast detection took (helpful diagnostic)
+          const detectMs = Date.now() - startTime
+          setPerfInfo(`fast detect: ${detectMs}ms`)
+
           const quality = evaluateFaceQuality(detection, video)
           setQualityState(quality)
 
@@ -151,15 +155,9 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             const progress = Math.min(stableFor / STABLE_LOCK_MS, 1)
             setStableProgress(progress)
 
-            if (progress >= 1 && !captured) {
-              setCaptured(true)
-              if (onCaptured) {
-                onCaptured({
-                  descriptor: Array.from(detection.descriptor),
-                  detectionScore: detection.detection.score,
-                  videoSnapshot: captureSnapshot(video),
-                })
-              }
+            if (progress >= 1 && !captured && !capturing) {
+              // Stop fast loop, run FULL detection (landmarks + embedding) at capture time
+              setCapturing(true)
               break
             }
           } else {
@@ -170,7 +168,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
           console.error('Detection error:', err)
         }
 
-        // Throttle — wait until DETECT_INTERVAL_MS has elapsed since this iteration started
         const elapsed = Date.now() - startTime
         const wait = Math.max(DETECT_INTERVAL_MS - elapsed, 50)
         await new Promise(r => setTimeout(r, wait))
@@ -182,7 +179,50 @@ export default function CameraScreen({ onCancel, onCaptured }) {
     return () => {
       active = false
     }
-  }, [permissionState, modelStatus, captured, onCaptured])
+  }, [permissionState, modelStatus, captured, capturing])
+
+  // Capture phase — runs the full embedding once stability locked
+  useEffect(() => {
+    if (!capturing || captured) return
+
+    let cancelled = false
+    ;(async () => {
+      const video = videoRef.current
+      if (!video) return
+
+      try {
+        setPerfInfo('Capturing full face data...')
+        const startTime = Date.now()
+        const fullDetection = await detectFaceFull(video)
+        if (cancelled) return
+
+        const captureMs = Date.now() - startTime
+        setPerfInfo(`capture: ${captureMs}ms`)
+
+        if (!fullDetection) {
+          // Face moved out of frame at the moment of capture - retry by going back to detect loop
+          setCapturing(false)
+          stableSinceRef.current = null
+          setStableProgress(0)
+          return
+        }
+
+        setCaptured(true)
+        if (onCaptured) {
+          onCaptured({
+            descriptor: Array.from(fullDetection.descriptor),
+            detectionScore: fullDetection.detection.score,
+            videoSnapshot: captureSnapshot(video),
+          })
+        }
+      } catch (err) {
+        console.error('Full capture failed:', err)
+        setCapturing(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [capturing, captured, onCaptured])
 
   // Auto-cancel after 30 seconds (only when granted, not captured)
   useEffect(() => {
@@ -216,7 +256,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
   }
 
   const isModelLoading = modelStatus === 'loading' || modelStatus === 'not_loaded'
-  const showQualityHint = permissionState === 'granted' && modelStatus === 'ready' && !captured
+  const showQualityHint = permissionState === 'granted' && modelStatus === 'ready' && !captured && !capturing
 
   return (
     <div className="fade-in" style={{
@@ -252,8 +292,8 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         Cancel
       </button>
 
-      {/* Debug info */}
-      {(debugInfo || modelMessage) && !captured && (
+      {/* Debug info — top left */}
+      {(debugInfo || modelMessage || perfInfo) && !captured && (
         <div style={{
           position: 'absolute',
           top: 16,
@@ -270,10 +310,11 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         }}>
           {debugInfo && <div>cam: {debugInfo}</div>}
           {modelMessage && <div>ai: {modelMessage}</div>}
+          {perfInfo && <div>perf: {perfInfo}</div>}
         </div>
       )}
 
-      {/* Camera frame container */}
+      {/* Camera frame */}
       <div style={{
         width: 'min(60vh, 80vw)',
         height: 'min(60vh, 80vw)',
@@ -323,9 +364,30 @@ export default function CameraScreen({ onCancel, onCaptured }) {
               strokeWidth="2"
               strokeDasharray={`${stableProgress * 301.6} 301.6`}
               strokeLinecap="round"
-              style={{ transition: 'stroke-dasharray 0.2s linear' }}
+              style={{ transition: 'stroke-dasharray 0.5s linear' }}
             />
           </svg>
+        )}
+
+        {/* Capturing overlay (during full detection, takes ~500ms-1s on slow devices) */}
+        {capturing && !captured && (
+          <div className="fade-in" style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(74,222,128,0.15)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <div style={{
+              width: 64, height: 64,
+              border: '3px solid rgba(74,222,128,0.3)',
+              borderTopColor: '#4ade80',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+            }} />
+          </div>
         )}
 
         {/* Captured success overlay */}
@@ -460,9 +522,9 @@ export default function CameraScreen({ onCancel, onCaptured }) {
               color: 'var(--text-light)',
               marginBottom: 4,
             }}>
-              {captured ? 'Got it!' : isModelLoading ? 'Loading face recognition…' : 'Look at the camera'}
+              {captured ? 'Got it!' : capturing ? 'Capturing…' : isModelLoading ? 'Loading face recognition…' : 'Look at the camera'}
             </h2>
-            {!captured && !isModelLoading && (
+            {!captured && !capturing && !isModelLoading && (
               <p style={{
                 fontSize: 'min(1.8vh, 14px)',
                 color: qualityState.ok ? '#4ade80' : 'var(--text-muted)',
@@ -474,7 +536,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             )}
           </div>
 
-          {!captured && (
+          {!captured && !capturing && (
             <div style={{
               marginTop: 32,
               padding: '14px 20px',
@@ -492,7 +554,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
                 letterSpacing: '0.1em',
                 marginBottom: 6,
               }}>
-                Phase 2 · Face detection
+                Phase 2 · Optimized for speed
               </div>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 Detecting your face. Recognition (matching to a teacher) comes in Phase 4.
@@ -534,7 +596,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             </div>
           )}
 
-          {countdown !== null && countdown <= 10 && !captured && (
+          {countdown !== null && countdown <= 10 && !captured && !capturing && (
             <div style={{
               position: 'absolute',
               bottom: 24,

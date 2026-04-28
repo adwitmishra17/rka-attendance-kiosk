@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { loadFaceModels, detectFaceInVideo, evaluateFaceQuality } from '../lib/faceDetection'
 
-// How long the face must be "good" before we lock in the capture
-const STABLE_LOCK_MS = 600
-// How often we run detection (ms between attempts)
-const DETECT_INTERVAL_MS = 200
+// Tuned for Tab A7 — slower devices need more time between detections
+const STABLE_LOCK_MS = 1000     // was 600 — needs more measurements at slower detection rate
+const DETECT_INTERVAL_MS = 500  // was 200 — 2 detections per second instead of 5
 
 const QUALITY_MESSAGES = {
   no_face: 'Step into frame',
@@ -18,7 +17,6 @@ const QUALITY_MESSAGES = {
 export default function CameraScreen({ onCancel, onCaptured }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
-  const detectIntervalRef = useRef(null)
   const stableSinceRef = useRef(null)
   const lastDetectionRef = useRef(null)
 
@@ -27,11 +25,11 @@ export default function CameraScreen({ onCancel, onCaptured }) {
   const [countdown, setCountdown] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
 
-  const [modelStatus, setModelStatus] = useState('not_loaded') // not_loaded | loading | ready | error
+  const [modelStatus, setModelStatus] = useState('not_loaded')
   const [modelMessage, setModelMessage] = useState('')
 
   const [qualityState, setQualityState] = useState({ ok: false, reason: 'no_face' })
-  const [stableProgress, setStableProgress] = useState(0) // 0..1
+  const [stableProgress, setStableProgress] = useState(0)
   const [captured, setCaptured] = useState(false)
 
   // Load face-api.js models on mount
@@ -146,7 +144,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
           setQualityState(quality)
 
           if (quality.ok) {
-            // Track stability
             if (stableSinceRef.current === null) {
               stableSinceRef.current = Date.now()
             }
@@ -155,7 +152,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             setStableProgress(progress)
 
             if (progress >= 1 && !captured) {
-              // Lock in this capture
               setCaptured(true)
               if (onCaptured) {
                 onCaptured({
@@ -167,7 +163,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
               break
             }
           } else {
-            // Reset stability tracking
             stableSinceRef.current = null
             setStableProgress(0)
           }
@@ -175,7 +170,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
           console.error('Detection error:', err)
         }
 
-        // Throttle to DETECT_INTERVAL_MS minimum between iterations
+        // Throttle — wait until DETECT_INTERVAL_MS has elapsed since this iteration started
         const elapsed = Date.now() - startTime
         const wait = Math.max(DETECT_INTERVAL_MS - elapsed, 50)
         await new Promise(r => setTimeout(r, wait))
@@ -207,7 +202,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
     return () => clearInterval(timer)
   }, [permissionState, captured, onCancel])
 
-  // Capture snapshot from video to data URL
   function captureSnapshot(video) {
     try {
       const canvas = document.createElement('canvas')
@@ -279,7 +273,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         </div>
       )}
 
-      {/* Camera frame container — always rendered for stable ref */}
+      {/* Camera frame container */}
       <div style={{
         width: 'min(60vh, 80vw)',
         height: 'min(60vh, 80vw)',
@@ -309,7 +303,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
           }}
         />
 
-        {/* Stability progress ring (SVG over video) */}
+        {/* Stability progress ring */}
         {showQualityHint && qualityState.ok && stableProgress > 0 && (
           <svg
             viewBox="0 0 100 100"
@@ -329,7 +323,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
               strokeWidth="2"
               strokeDasharray={`${stableProgress * 301.6} 301.6`}
               strokeLinecap="round"
-              style={{ transition: 'stroke-dasharray 0.1s linear' }}
+              style={{ transition: 'stroke-dasharray 0.2s linear' }}
             />
           </svg>
         )}
@@ -374,7 +368,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         )}
       </div>
 
-      {/* Permission requesting state */}
+      {/* Permission requesting */}
       {permissionState === 'requesting' && (
         <div style={{ textAlign: 'center', maxWidth: 400 }}>
           <div style={{
@@ -399,7 +393,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         </div>
       )}
 
-      {/* Permission denied / error state */}
+      {/* Permission denied / error */}
       {(permissionState === 'denied' || permissionState === 'error') && (
         <div style={{ textAlign: 'center', maxWidth: 480 }}>
           <div style={{
@@ -448,7 +442,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
         </div>
       )}
 
-      {/* Camera ready - show title + quality hint */}
+      {/* Camera ready */}
       {permissionState === 'granted' && (
         <>
           <div style={{
@@ -480,7 +474,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             )}
           </div>
 
-          {/* Phase 2 notice */}
           {!captured && (
             <div style={{
               marginTop: 32,
@@ -499,7 +492,7 @@ export default function CameraScreen({ onCancel, onCaptured }) {
                 letterSpacing: '0.1em',
                 marginBottom: 6,
               }}>
-                Phase 2 · Face detection test
+                Phase 2 · Face detection
               </div>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 Detecting your face. Recognition (matching to a teacher) comes in Phase 4.
@@ -507,7 +500,6 @@ export default function CameraScreen({ onCancel, onCaptured }) {
             </div>
           )}
 
-          {/* Captured success message */}
           {captured && (
             <div className="slide-up" style={{
               marginTop: 28,

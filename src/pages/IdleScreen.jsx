@@ -54,26 +54,17 @@ export default function IdleScreen({ now, supabaseReady, onStart }) {
         {supabaseReady === true ? 'Online' : supabaseReady === false ? 'Offline' : 'Connecting…'}
       </div>
 
-      {/* Crest */}
-      <img src="/crest.png" alt="RKA Crest" style={{
-        width: 'min(22vh, 180px)',
-        height: 'min(22vh, 180px)',
+      {/* Banner (replaces round crest + school-name block) */}
+      <img src="/banner.png" alt="Radhakrishna Academy" style={{
+        width: 'min(70vw, 480px)',
+        height: 'auto',
+        maxHeight: '22vh',
         objectFit: 'contain',
         filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.4))',
-        marginBottom: 18,
+        marginBottom: 14,
       }} />
 
-      {/* School name */}
-      <div style={{
-        fontFamily: 'var(--font-display)',
-        fontSize: 'min(3.5vh, 28px)',
-        fontWeight: 600,
-        color: 'var(--text-light)',
-        letterSpacing: '0.5px',
-        marginBottom: 4,
-      }}>
-        Radhakrishna Academy
-      </div>
+      {/* Attendance Portal label */}
       <div style={{
         fontSize: 'min(1.4vh, 11px)',
         color: 'var(--text-faint)',

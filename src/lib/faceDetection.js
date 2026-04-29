@@ -11,8 +11,6 @@ export async function loadFaceModels(onProgress) {
     const MODEL_URL = '/models'
     onProgress?.('Loading face detector…')
     await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL)
-    // Note: we still load landmarks because we may use it once we're locking in
-    // the capture, even though we skip it during the live loop for speed.
     onProgress?.('Loading landmarks…')
     await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL)
     onProgress?.('Loading recognition net…')
@@ -29,33 +27,15 @@ export function areModelsLoaded() {
 }
 
 /**
- * FAST detection — just bounding box, no landmarks, no embedding.
- * Used in the live loop. Roughly 3-4x faster than the full pipeline.
+ * Detect a face in the given video element.
+ * Full pipeline: detection + landmarks + 128-dim embedding.
+ * Used per-frame in the live loop. Suitable for fast hardware.
  */
-export async function detectFaceFast(videoEl) {
-  if (!modelsLoaded || !videoEl || videoEl.paused || videoEl.ended) return null
-
-  // 160 input — minimum useful size for face-api.js TinyFaceDetector.
-  // 160×160 = 25,600 pixels vs 224×224 = 50,176 (50% less compute)
-  const options = new faceapi.TinyFaceDetectorOptions({
-    inputSize: 160,
-    scoreThreshold: 0.5,
-  })
-
-  // detectSingleFace alone — no .withFaceLandmarks(), no .withFaceDescriptor()
-  const result = await faceapi.detectSingleFace(videoEl, options)
-  return result || null
-}
-
-/**
- * SLOW but complete detection — runs landmarks + embedding.
- * Only called once at capture time, not per-frame.
- */
-export async function detectFaceFull(videoEl) {
+export async function detectFaceInVideo(videoEl) {
   if (!modelsLoaded || !videoEl || videoEl.paused || videoEl.ended) return null
 
   const options = new faceapi.TinyFaceDetectorOptions({
-    inputSize: 224,  // higher resolution for the final capture for better embedding quality
+    inputSize: 320,
     scoreThreshold: 0.5,
   })
 
@@ -68,19 +48,12 @@ export async function detectFaceFull(videoEl) {
 }
 
 /**
- * Quality check using just the bounding box (no landmarks needed).
- * Returns { ok: boolean, reason: string }
+ * Quality check — returns { ok, reason }
  */
 export function evaluateFaceQuality(detection, videoEl) {
   if (!detection) return { ok: false, reason: 'no_face' }
 
-  // Detection from fast path has .box and .score directly
-  // Detection from full path nests it under .detection
-  const box = detection.box || detection.detection?.box
-  const score = detection.score ?? detection.detection?.score
-
-  if (!box) return { ok: false, reason: 'no_face' }
-
+  const { box, score } = detection.detection
   const videoW = videoEl.videoWidth
   const videoH = videoEl.videoHeight
 
